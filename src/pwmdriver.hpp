@@ -32,18 +32,16 @@ public:
 	}
 
 	/**
-	 * get pattern timing info
-	 *
-	 * TODO: return real duty cycle calculated from these values
+	 * return duty cycle
 	 *
 	 * @param U
 	 * @param V
 	 * @param W
 	 */
-	void getDuty(uint16_t& U, uint16_t& V, uint16_t& W){
-		U = duty_U;
-		V = duty_V;
-		W = duty_W;
+	void getDuty(float& U, float& V, float& W){
+		U = ((float)(pwmPeriodCnt - duty_U))/(float)pwmPeriodCnt;
+		V = ((float)(pwmPeriodCnt - duty_V))/(float)pwmPeriodCnt;
+		W = ((float)(pwmPeriodCnt - duty_W))/(float)pwmPeriodCnt;
 	}
 
 	/**

@@ -8,7 +8,7 @@ class Motor{
 
 private:
 	float TIME_DELTA;
-
+public:
 	// +++ electrical params +++
 	//grid
 	static constexpr float BRIDGE_VOLTAGE = 36.f;
@@ -29,8 +29,6 @@ private:
 
 	//value got from https://discourse.odriverobotics.com/t/project-hoverarm/441
 	static constexpr float J = 0.00701;					//moment of inertia (Nms^2 or kgm^2)
-
-public:
 
 	//output struct with aggregated info
 	struct Output{

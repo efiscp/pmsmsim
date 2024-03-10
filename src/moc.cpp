@@ -27,9 +27,13 @@ int main(void) {
 	f.setDesiredCurrent(0, 10);
 
 	PwmDriver::VoltageVector v;
+
+	//start PWM driver and print header for CSV
 	p.start();
 	std::cout<<"time;fi;omega;U;V;W;"<<std::endl;
-	for(uint64_t i=0; i<1000000000*simSec; ++i){
+
+	//main simulation loop
+	for(uint64_t i=0; i<NS_IN_S*simSec; ++i){
 
 		//update FOC model
 		if((i % focUpdatePeriod) == 0)
@@ -47,7 +51,7 @@ int main(void) {
 		if(i % displayPeriod == 0){
 			uint16_t U, V, W;
 			p.getDuty(U, V, W);
-			std::cout<<(float)i/1000000000.f<<";"<<MO.fi*360/(2*M_PI)<<";"<<MO.omega*10<<";"<<U<<";"<<V<<";"<<W<<";"<<std::endl;
+			std::cout<<(float)i/(float)NS_IN_S<<";"<<MO.fi*360/(2*M_PI)<<";"<<MO.omega*10<<";"<<U<<";"<<V<<";"<<W<<";"<<std::endl;
 		}
 	}
 

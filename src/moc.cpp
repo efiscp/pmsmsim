@@ -30,7 +30,7 @@ int main(void) {
 
 	//start PWM driver and print header for CSV
 	p.start();
-	std::cout<<"time;fi;omega*10;U*10;V*10;W*10;"<<std::endl;
+	std::cout<<"time;fi;omega*10;U*10;V*10;W*10;error_d;error_q"<<std::endl;
 
 	//main simulation loop
 	for(uint64_t i=0; i<NS_IN_S*simSec; ++i){
@@ -57,7 +57,8 @@ int main(void) {
 			float U, V, W;
 			p.getDuty(U, V, W);
 			std::cout<<(float)i/(float)NS_IN_S<<";"<<MO.fi*360/(2*M_PI)<<";"<<MO.omega*10<<";"
-					<<10*U*Motor::BRIDGE_VOLTAGE<<";"<<10*V*Motor::BRIDGE_VOLTAGE<<";"<<10*W*Motor::BRIDGE_VOLTAGE<<";"<<std::endl;
+					<<10*U*Motor::BRIDGE_VOLTAGE<<";"<<10*V*Motor::BRIDGE_VOLTAGE<<";"<<10*W*Motor::BRIDGE_VOLTAGE<<";"
+					<<f.lastDerror<<";"<<f.lastQerror<<";"<<std::endl;
 		}
 	}
 

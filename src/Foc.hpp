@@ -8,6 +8,8 @@ class Foc{
 
 public:
 
+	float lastDerror = 0, lastQerror = 0;
+
 	/**
 	 * store desired DQ current
 	 *
@@ -96,8 +98,27 @@ private:
 	 * @param i_q quadratic component
 	 */
 	void PI(float& i_d, float& i_q){
-		i_d = (desiredDcurrent - i_d)*PI_P;
-		i_q = (desiredQcurrent - i_q)*PI_P;
+		//error
+		float error_d = desiredDcurrent - i_d;
+		float error_q = desiredQcurrent - i_q;
+
+		//integral
+		PI_integral_d += PI_I*error_d;
+		PI_integral_q += PI_I*error_q;
+
+		//anti-windup limiter
+		PI_integral_d = (PI_integral_d > PI_integralMaxAction) ? PI_integralMaxAction : PI_integral_d;
+		PI_integral_d = (PI_integral_d < PI_integralMinAction) ? PI_integralMinAction : PI_integral_d;
+		PI_integral_q = (PI_integral_q > PI_integralMaxAction) ? PI_integralMaxAction : PI_integral_q;
+		PI_integral_q = (PI_integral_q < PI_integralMinAction) ? PI_integralMinAction : PI_integral_q;
+
+		//calculate action
+		i_d = error_d*PI_P + PI_integral_d;
+		i_q = error_q*PI_P + PI_integral_q;
+
+		//log
+		lastDerror = error_d;
+		lastQerror = error_q;
 	}
 
 	/**
@@ -178,8 +199,15 @@ private:
 	float desiredDcurrent = 0;
 	float desiredQcurrent = 0;
 
-	float PI_P = 0.6;									//PI controller proportional factor
-	float Vmax = 0.4f;									//max space vector length (TODO: tune)
+	float PI_integral_d = 0;
+	float PI_integral_q = 0;
+
+	static constexpr float PI_P = 0.6;									//PI controller proportional factor
+	static constexpr float PI_I = 0.05;									//PI controller integral factor
+	static constexpr float PI_integralMaxAction = 0.5;
+	static constexpr float PI_integralMinAction = -0.5;
+
+	static constexpr float Vmax = 0.4f;									//max space vector length (TODO: tune)
 };
 
 

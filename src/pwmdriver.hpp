@@ -12,6 +12,9 @@ public:
 	};
 
 	PwmDriver(uint32_t callFreq, uint32_t pwmFreq):callFrequency(callFreq),pwmFrequency(pwmFreq){
+
+		//calculate tick count based on PWM frequency and call frequency
+		//note: value is divided by 2 because full PWM period is split into upcounting and downcounting phases
 		pwmPeriodCnt = callFreq/pwmFreq/2;	//-1 in STM32
 	}
 
@@ -29,10 +32,13 @@ public:
 		dutyShadow_V = dutyV;
 		dutyShadow_W = dutyW;
 
+		//refresh timing info if possible
+		if(pwmTick == 0)
+			pullNewDuty();
 	}
 
 	/**
-	 * return duty cycle
+	 * return duty cycle for logging
 	 *
 	 * @param U
 	 * @param V
@@ -67,15 +73,17 @@ public:
 		if(pwmState == COUNTING_UP){
 			++pwmTick;
 
+			//high limit reached - start counting down from next call
 			if(pwmTick >= pwmPeriodCnt)
 				pwmState = COUNTING_DOWN;
 
 		}else if(pwmState == COUNTING_DOWN){
 			--pwmTick;
 
+			//low limit reached - start counting up from next call
 			if(pwmTick == 0){
 				pwmState = COUNTING_UP;
-
+				//also, refresh pattern timing
 				pullNewDuty();
 			}
 		}else
@@ -90,11 +98,18 @@ public:
 			vector.W = 1;
 	}
 
+	/**
+	 * PWM cycle in ticks for PWM timing calculations in FOC module
+	 * @return
+	 */
 	uint16_t getPwmPeriodCnt(void){
 		return pwmPeriodCnt;
 	}
 private:
 
+	/**
+	 * refresh timing info from shadow buffers
+	 */
 	void pullNewDuty(void){
 		duty_U = dutyShadow_U;
 		duty_V = dutyShadow_V;
@@ -104,14 +119,17 @@ private:
 	uint32_t callFrequency;
 	uint32_t pwmFrequency;
 
-	uint16_t duty_U;
-	uint16_t duty_V;
-	uint16_t duty_W;
+	//time info for PWM pattern generation
+	uint16_t duty_U = 0;
+	uint16_t duty_V = 0;
+	uint16_t duty_W = 0;
 
+	//timing info is updated at the end of the PWM period - use double buffering
 	uint16_t dutyShadow_U;
 	uint16_t dutyShadow_V;
 	uint16_t dutyShadow_W;
 
+	//main counter for PWM pattern generation
 	uint16_t pwmTick;
 
 	enum PwmState{

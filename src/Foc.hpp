@@ -8,7 +8,10 @@ class Foc{
 
 public:
 
-	float lastDerror = 0, lastQerror = 0;
+	//public members for logging output
+	float lastDerror = 0, lastQerror = 0, lastOmegaError = 0, lastFiError = 0,
+		lastDcurrent = 0, lastQcurrent = 0,
+		lastDcurrentRequest = 0, lastQcurrentRequest = 0;
 
 	/**
 	 * store desired DQ current
@@ -19,6 +22,33 @@ public:
 	void setDesiredCurrent(float desiredD, float desiredQ){
 		desiredDcurrent = desiredD;
 		desiredQcurrent = desiredQ;
+		controlMode = CURRENT_CONTROL;
+	}
+
+	/**
+	 * store angle speed reference
+	 *
+	 * note: the control loop will overwrite desired current in speed control mode
+	 *
+	 * @param angleSpeed
+	 */
+	void setDesiredSpeed(float angleSpeed){
+		desiredAngleSpeed = angleSpeed;
+		controlMode = SPEED_CONTROL;
+	}
+
+	/**
+	 * store position reference
+	 *
+	 * note: the control loop will overwrite both the desired angle speed and current in this mode
+	 *
+	 * not tested
+	 *
+	 * @param position
+	 */
+	void setDesiredPosition(float position){
+		desiredPosition = position;
+		controlMode = POSITION_CONTROL;
 	}
 
 	/**
@@ -34,8 +64,38 @@ public:
 		clarke(feedback.I_U, feedback.I_V, feedback.I_W, i_alpha, i_beta);
 		park(feedback.fi, i_alpha, i_beta, i_d, i_q);
 
-		//run PI controller for DQ currents
-		PI(i_d, i_q);
+		//store last known currents for logging
+		lastDcurrent = i_d;
+		lastQcurrent = i_q;
+
+		//run control loops
+		switch(controlMode){
+		case POSITION_CONTROL:
+			//PI controller for position control - not tested
+			lastFiError = PI(desiredPosition, feedback.fi, PI_P_position, PI_I_position, PI_integralMinAction_position, PI_integralMaxAction_position,
+									PI_integral_position, desiredAngleSpeed);
+			//intentional fall-through
+		case SPEED_CONTROL:
+			//calculate Q current request with angle speed controller
+			lastOmegaError = PI(desiredAngleSpeed, feedback.omega, PI_P_speed, PI_I_speed, PI_integralMinAction_speed, PI_integralMaxAction_speed,
+									PI_integral_speed, desiredQcurrent);
+
+			//no field weakening
+			desiredDcurrent = 0;
+
+			//store last known current request for logging
+			lastDcurrentRequest = desiredDcurrent;
+			lastQcurrentRequest = desiredQcurrent;
+			//intentional fall-through
+		case CURRENT_CONTROL:
+			//run PI controller for DQ currents
+			lastDerror = PI(desiredDcurrent, i_d, PI_P, PI_I, PI_integralMinAction, PI_integralMaxAction, PI_integral_d, i_d);
+			lastQerror = PI(desiredQcurrent, i_q, PI_P, PI_I, PI_integralMinAction, PI_integralMaxAction, PI_integral_q, i_q);
+			//intentional fall-through
+		default:
+			//nothing to do here
+			break;
+		}
 
 		//do inverse park transform
 		inversePark(feedback.fi, i_d, i_q, i_alpha, i_beta);
@@ -90,35 +150,29 @@ private:
 	}
 
 	/**
-	 * DQ controller (P controller so far)
+	 * stateless PI controller
 	 *
-	 * TODO: add integrator
-	 *
-	 * @param i_d direct component
-	 * @param i_q quadratic component
+	 * @param reference ref signal
+	 * @param actual measured signal
+	 * @param Kp proportional factor
+	 * @param Ki integral factor
+	 * @param windupLow integral limiter - low limit
+	 * @param windupHigh integral limiter - high limit
+	 * @param integral in/output for integral
+	 * @param output action
+	 * @return error (reference - actual)
 	 */
-	void PI(float& i_d, float& i_q){
-		//error
-		float error_d = desiredDcurrent - i_d;
-		float error_q = desiredQcurrent - i_q;
+	float PI(const float reference, const float actual, const float Kp, const float Ki,
+			const float windupLow, const float windupHigh, float& integral, float& output){
+		float error = reference - actual;
 
-		//integral
-		PI_integral_d += PI_I*error_d;
-		PI_integral_q += PI_I*error_q;
+		integral += Ki*error;
+		integral = (integral > windupHigh) ? windupHigh : integral;
+		integral = (integral < windupLow) ? windupLow : integral;
 
-		//anti-windup limiter
-		PI_integral_d = (PI_integral_d > PI_integralMaxAction) ? PI_integralMaxAction : PI_integral_d;
-		PI_integral_d = (PI_integral_d < PI_integralMinAction) ? PI_integralMinAction : PI_integral_d;
-		PI_integral_q = (PI_integral_q > PI_integralMaxAction) ? PI_integralMaxAction : PI_integral_q;
-		PI_integral_q = (PI_integral_q < PI_integralMinAction) ? PI_integralMinAction : PI_integral_q;
+		output = Kp*error + integral;
 
-		//calculate action
-		i_d = error_d*PI_P + PI_integral_d;
-		i_q = error_q*PI_P + PI_integral_q;
-
-		//log
-		lastDerror = error_d;
-		lastQerror = error_q;
+		return error;
 	}
 
 	/**
@@ -136,7 +190,7 @@ private:
 		float m = sqrtf(alpha*alpha + beta*beta);
 
 		if(m > Vmax)
-			m = Vmax;
+			m = Vmax - EPSILON;
 
 		//calculate vector length
 		float angRad = atan2f(beta, alpha);
@@ -163,7 +217,7 @@ private:
 
 		//simple check for PWM timing violation (TODO: improve)
 		if(t0 < 0)
-			std::cout<<"PWM ERROR"<<std::endl;
+			std::cout<<"PWM ERROR, t0: "<<t0<<std::endl;
 
 		//select pattern and set duty cycle
 		switch(sector){
@@ -191,23 +245,51 @@ private:
 
 	}
 
+	//constants for reference frame transformations
 	static constexpr float SQRT3_2 = sqrtf(3)/2;		//cos 30
 	static constexpr float SQRT3 = sqrtf(3);
 	static constexpr float PI_3 = M_PI/3.f;				//60 deg
 	static constexpr float SQRT3_2_INV = 1/SQRT3_2;		//1/cos(30)
 
+	//reference signals
 	float desiredDcurrent = 0;
 	float desiredQcurrent = 0;
+	float desiredAngleSpeed = 0;
+	float desiredPosition = 0;
 
+	//integrals for PI controllers
 	float PI_integral_d = 0;
 	float PI_integral_q = 0;
+	float PI_integral_speed = 0;
+	float PI_integral_position = 0;
 
-	static constexpr float PI_P = 0.6;									//PI controller proportional factor
-	static constexpr float PI_I = 0.05;									//PI controller integral factor
-	static constexpr float PI_integralMaxAction = 0.5;
-	static constexpr float PI_integralMinAction = -0.5;
 
-	static constexpr float Vmax = 0.4f;									//max space vector length (TODO: tune)
+	static constexpr float PI_P = 0.6;								//PI current controller proportional factor
+	static constexpr float PI_I = 0.08;								//PI current controller integral factor
+	static constexpr float PI_integralMaxAction = 0.8;				//PI current integral limiter
+	static constexpr float PI_integralMinAction = -0.8;				//PI current integral limiter
+
+	static constexpr float PI_P_position = 0.6;						//PI position controller proportional factor (not tuned)
+	static constexpr float PI_I_position = 0.05;					//PI position controller integral factor (not tuned)
+	static constexpr float PI_integralMaxAction_position = 0.5;		//PI position integral limiter
+	static constexpr float PI_integralMinAction_position = -0.5;	//PI position integral limiter
+
+	static constexpr float PI_P_speed = 15;							//PI angle speed controller proportional factor
+	static constexpr float PI_I_speed = 2;							//PI angle speed controller integral factor
+	static constexpr float PI_integralMaxAction_speed = 3;			//PI angle speed integral limiter
+	static constexpr float PI_integralMinAction_speed = -3;			//PI angle speed integral limiter
+
+	static constexpr float EPSILON = 0.00001f;						//for handling float inaccuracy
+	static constexpr float Vmax = sqrtf(3)/2;						//max space vector length without overmodulation
+
+	enum ControlMode{
+		OFF,
+		CURRENT_CONTROL,
+		SPEED_CONTROL,
+		POSITION_CONTROL,
+	};
+
+	ControlMode controlMode = OFF;	//global mode control
 };
 
 

@@ -8,6 +8,7 @@ class Motor{
 
 private:
 	float TIME_DELTA;
+	float timebase;
 public:
 	// +++ electrical params +++
 	//grid
@@ -25,7 +26,7 @@ public:
 
 	// +++ mechanical params +++
 	static constexpr float KT_A_ELECT = KE_A_ELECT;				//torque constant - assuem no losses
-	static constexpr float B = 0.03f;							//viscous damping ratio (oscillation decay rate)
+	static constexpr float B = 0.f;							//viscous damping ratio (oscillation decay rate)
 
 	//value got from https://discourse.odriverobotics.com/t/project-hoverarm/441
 	static constexpr float J = 0.00701;					//moment of inertia (Nms^2 or kgm^2)
@@ -69,7 +70,7 @@ public:
 	 * @param f initial electrical angle (should be set to 0)
 	 * @param period refresh rate of motor model
 	 */
-	Motor(float f, float period):fi(f),fi_prev(f),fi_mech(f/POLEPAIR),TIME_DELTA(period){}
+	Motor(float f, float tb, float period):fi(f),fi_prev(f),fi_mech(f/POLEPAIR),timebase(tb),TIME_DELTA(period){}
 
 	/**
 	 * refresh motor model
@@ -177,7 +178,7 @@ private:
 	 */
 	inline float calcPhaseCurrent(float voltage, float bemf, float prevCurrent){
 		float tmp = voltage - R_COIL*prevCurrent - bemf;	//add
-		return prevCurrent + tmp/L_COIL*TIME_DELTA;					//accumulate
+		return prevCurrent + tmp/L_COIL*TIME_DELTA/timebase;					//accumulate
 	}
 
 	/**
@@ -243,8 +244,8 @@ private:
 	 */
 	void calcMech(void){
 		float tmp = T_Electromagnetic - T_Load - B*omega_prev;
-		omega = omega_prev + tmp/J*TIME_DELTA;
-		fi = fi_prev + omega*TIME_DELTA;
+		omega = omega_prev + tmp/J*TIME_DELTA/timebase;
+		fi = fi_prev + omega*TIME_DELTA/timebase;
 		fi_mech += (fi - fi_prev)/POLEPAIR;
 		omega_mech = omega/POLEPAIR;
 
